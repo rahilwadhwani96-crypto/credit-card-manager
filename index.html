@@ -25,6 +25,9 @@
     <!-- Safe-area spacer for the iPhone notch / status bar -->
     <div class="safe-area-top"></div>
 
+    <!-- Pull-to-refresh indicator -->
+    <div id="pull-refresh-indicator" class="pull-refresh-indicator">⟳</div>
+
     <!-- =================================================================
          SKELETON LOADER (shown until first data fetch resolves)
          ================================================================= -->
@@ -67,6 +70,10 @@
         <div class="stat-card glass-card">
           <span class="stat-label">EMI Due</span>
           <span id="stat-emi-due" class="stat-value">₹0</span>
+        </div>
+        <div class="stat-card glass-card">
+          <span class="stat-label">Total Card Due</span>
+          <span id="stat-total-card-due" class="stat-value">₹0</span>
         </div>
         <div class="stat-card glass-card">
           <span class="stat-label">Cards Paid</span>
@@ -120,7 +127,7 @@
       </div>
 
       <section class="section-block">
-        <h2 class="section-title">Card Balances</h2>
+        <h2 class="section-title">Total Card Due</h2>
         <div id="card-balances-list" class="card-stack">
           <!-- populated by app.js -->
         </div>
