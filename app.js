@@ -33,6 +33,7 @@ const btnResetMonth = document.getElementById('btn-reset-month');
 const btnOpenExpense = document.getElementById('btn-open-expense');
 const btnOpenPayment = document.getElementById('btn-open-payment');
 const historyList = document.getElementById('history-list');
+const cardBalancesList = document.getElementById('card-balances-list');
 
 // Bottom sheet modal
 const modalBackdrop = document.getElementById('modal-backdrop');
@@ -212,6 +213,7 @@ function buildDashboardCardHtml(card) {
           <span class="meta-value">${card.monthsRemaining}</span>
         </div>
       </div>
+      ${buildDueLabelHtml(card.dueLabel)}
     </div>
   `;
 }
@@ -247,10 +249,6 @@ function buildEmiCardHtml(card) {
           <span class="meta-value">${formatCurrency(card.emi)}</span>
         </div>
         <div class="meta-pair">
-          <span class="meta-label">For Now</span>
-          <span class="meta-value">${formatCurrency(card.forNow)}</span>
-        </div>
-        <div class="meta-pair">
           <span class="meta-label">Bill Date</span>
           <span class="meta-value">${escapeHtml(card.billDate)}</span>
         </div>
@@ -263,6 +261,7 @@ function buildEmiCardHtml(card) {
           <span class="meta-value">${card.monthsRemaining}</span>
         </div>
       </div>
+      ${buildDueLabelHtml(card.dueLabel)}
       ${card.comment ? `<p class="card-comment">${escapeHtml(card.comment)}</p>` : ''}
       <div class="card-item-actions">
         <button
@@ -274,6 +273,24 @@ function buildEmiCardHtml(card) {
       </div>
     </div>
   `;
+}
+
+/**
+ * Renders a due-date label with color-coding: red if overdue, orange if
+ * due today/tomorrow, neutral gray otherwise. Returns '' if there's no
+ * label to show (keeps card markup clean).
+ * @param {string} label
+ * @return {string}
+ */
+function buildDueLabelHtml(label) {
+  if (!label) return '';
+  let cssClass = 'due-label';
+  if (label.indexOf('Overdue') === 0) {
+    cssClass += ' due-label-overdue';
+  } else if (label === 'Due today' || label === 'Due tomorrow') {
+    cssClass += ' due-label-soon';
+  }
+  return `<span class="${cssClass}">${escapeHtml(label)}</span>`;
 }
 
 function attachEmiPageHandlers() {
@@ -316,9 +333,20 @@ function attachEmiPageHandlers() {
 function renderTransactionsPage(data) {
   populateCardDropdown(data.cards);
 
+  cardBalancesList.innerHTML = data.balances.map(buildBalanceItemHtml).join('');
+
   historyList.innerHTML = data.history.length
     ? data.history.map(buildHistoryItemHtml).join('')
     : '<p class="history-empty">No transactions yet.</p>';
+}
+
+function buildBalanceItemHtml(balance) {
+  return `
+    <div class="balance-item">
+      <span class="balance-card-name">${escapeHtml(balance.card)}</span>
+      <span class="balance-amount">${formatCurrency(balance.currentDue)}</span>
+    </div>
+  `;
 }
 
 function populateCardDropdown(cards) {
