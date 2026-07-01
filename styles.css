@@ -863,7 +863,6 @@ button {
   }
 
   .bottom-nav,
-  .bottom-sheet,
   .skeleton-overlay {
     max-width: 480px;
     margin: 0 auto;
@@ -872,7 +871,10 @@ button {
     transform: translateX(-50%);
   }
 
-  .bottom-sheet.visible {
-    transform: translateX(-50%) translateY(0);
+  .bottom-sheet {
+    max-width: 480px;
+    left: 50%;
+    right: auto;
+    margin-left: -240px;
   }
 }
