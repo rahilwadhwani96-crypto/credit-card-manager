@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <title>Cards</title>
+
+  <!-- PWA / iOS Home Screen metadata -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Cards" />
+  <meta name="theme-color" content="#FF7A30" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="assets/icons/icon-180.png" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ===================================================================
+       APP SHELL
+       =================================================================== -->
+  <div id="app">
+
+    <!-- Safe-area spacer for the iPhone notch / status bar -->
+    <div class="safe-area-top"></div>
+
+    <!-- =================================================================
+         SKELETON LOADER (shown until first data fetch resolves)
+         ================================================================= -->
+    <div id="skeleton-overlay" class="skeleton-overlay">
+      <div class="skeleton-ring"></div>
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+    </div>
+
+    <!-- =================================================================
+         PAGE: DASHBOARD
+         ================================================================= -->
+    <main id="page-dashboard" class="page page-active" data-page="dashboard">
+      <header class="page-header">
+        <h1 class="page-title">Dashboard</h1>
+      </header>
+
+      <section class="ring-card glass-card">
+        <div class="ring-wrap">
+          <svg class="progress-ring" viewBox="0 0 140 140">
+            <circle class="progress-ring-track" cx="70" cy="70" r="60"></circle>
+            <circle id="progress-ring-fill" class="progress-ring-fill" cx="70" cy="70" r="60"></circle>
+          </svg>
+          <div class="ring-center">
+            <span class="ring-label">Outstanding</span>
+            <span id="stat-outstanding" class="ring-value">₹0</span>
+          </div>
+        </div>
+        <div class="ring-sub" id="ring-sub-label">0 of 0 cards paid this month</div>
+      </section>
+
+      <section class="stat-grid">
+        <div class="stat-card glass-card">
+          <span class="stat-label">EMI Due</span>
+          <span id="stat-emi-due" class="stat-value">₹0</span>
+        </div>
+        <div class="stat-card glass-card">
+          <span class="stat-label">Cards Paid</span>
+          <span id="stat-cards-paid" class="stat-value">0</span>
+        </div>
+        <div class="stat-card glass-card">
+          <span class="stat-label">Upcoming Due</span>
+          <span id="stat-upcoming-due" class="stat-value">0</span>
+        </div>
+      </section>
+
+      <section class="section-block">
+        <h2 class="section-title">Your Cards</h2>
+        <div id="dashboard-cards-list" class="card-stack">
+          <!-- populated by app.js -->
+        </div>
+      </section>
+    </main>
+
+    <!-- =================================================================
+         PAGE: EMI
+         ================================================================= -->
+    <main id="page-emi" class="page" data-page="emi">
+      <header class="page-header">
+        <h1 class="page-title">EMI</h1>
+        <button id="btn-reset-month" class="btn-ghost" type="button">Reset Month</button>
+      </header>
+
+      <div id="emi-cards-list" class="card-stack">
+        <!-- populated by app.js -->
+      </div>
+    </main>
+
+    <!-- =================================================================
+         PAGE: TRANSACTIONS
+         ================================================================= -->
+    <main id="page-transactions" class="page" data-page="transactions">
+      <header class="page-header">
+        <h1 class="page-title">Transactions</h1>
+      </header>
+
+      <div class="tx-action-row">
+        <button id="btn-open-expense" class="tx-action-btn tx-action-expense" type="button">
+          <span class="tx-action-icon">↑</span>
+          <span>Expense</span>
+        </button>
+        <button id="btn-open-payment" class="tx-action-btn tx-action-payment" type="button">
+          <span class="tx-action-icon">↓</span>
+          <span>Payment</span>
+        </button>
+      </div>
+
+      <section class="section-block">
+        <h2 class="section-title">History</h2>
+        <div id="history-list" class="history-list">
+          <!-- populated by app.js -->
+        </div>
+      </section>
+    </main>
+
+    <!-- =================================================================
+         BOTTOM SHEET MODAL (Add Expense / Payment)
+         ================================================================= -->
+    <div id="modal-backdrop" class="modal-backdrop"></div>
+    <div id="tx-modal" class="bottom-sheet">
+      <div class="bottom-sheet-handle"></div>
+      <h3 id="tx-modal-title" class="bottom-sheet-title">Add Expense</h3>
+
+      <form id="tx-form" class="tx-form">
+        <label class="form-field">
+          <span class="form-label">Card</span>
+          <select id="tx-card" class="form-select" required></select>
+        </label>
+
+        <label class="form-field">
+          <span class="form-label">Amount</span>
+          <input id="tx-amount" class="form-input" type="number" inputmode="decimal" min="1" step="1" placeholder="0" required />
+        </label>
+
+        <label class="form-field">
+          <span class="form-label">Comment</span>
+          <input id="tx-comment" class="form-input" type="text" placeholder="Optional" />
+        </label>
+
+        <button id="tx-submit" class="btn-primary" type="submit">Save</button>
+      </form>
+    </div>
+
+    <!-- =================================================================
+         CONFIRM DIALOG (Reset Month)
+         ================================================================= -->
+    <div id="confirm-backdrop" class="modal-backdrop"></div>
+    <div id="confirm-dialog" class="confirm-dialog">
+      <p id="confirm-message" class="confirm-message">Are you sure?</p>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" class="btn-ghost" type="button">Cancel</button>
+        <button id="confirm-ok" class="btn-danger" type="button">Confirm</button>
+      </div>
+    </div>
+
+    <!-- =================================================================
+         TOAST
+         ================================================================= -->
+    <div id="toast" class="toast"></div>
+
+    <!-- =================================================================
+         BOTTOM NAVIGATION
+         ================================================================= -->
+    <nav class="bottom-nav">
+      <button class="nav-item nav-item-active" data-target="dashboard" type="button">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">Dashboard</span>
+      </button>
+      <button class="nav-item" data-target="emi" type="button">
+        <span class="nav-icon">💳</span>
+        <span class="nav-label">EMI</span>
+      </button>
+      <button class="nav-item" data-target="transactions" type="button">
+        <span class="nav-icon">💸</span>
+        <span class="nav-label">Transactions</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
