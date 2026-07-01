@@ -18,7 +18,7 @@
 // -----------------------------------------------------------------------
 
 /** Paste your deployed Apps Script Web App URL here (ends in /exec). */
-const API_URL = 'https://script.google.com/macros/s/AKfycbzX-3ZFxdWoOM4Q5qCSATPE-RO40KJtpX3MZLxGuLaLPB_eDBGNibvrY8qEqhySskXCDQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxxNCSpvDln4AzQ0S8TIByM-MQJXAZCP5hDBmcAStJQvLsCzZigc68Ep-1GUnmenxVwhg/exec';
 
 // -----------------------------------------------------------------------
 // CORE REQUEST HELPERS
