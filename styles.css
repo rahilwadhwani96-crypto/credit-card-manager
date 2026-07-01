@@ -1,700 +1,964 @@
 /**
- * app.js
+ * styles.css
  * ---------------------------------------------------------------------------
- * Main application logic for the Credit Card Manager PWA.
- * Handles navigation, rendering, and every user interaction. All backend
- * communication goes through the `api` object defined in api.js.
+ * Design system for the Credit Card Manager PWA.
+ * Theme: premium iOS app - Apple Wallet x CRED x Notion.
+ * Palette: warm off-white base + orange gradient accents + glassmorphism.
  * ---------------------------------------------------------------------------
  */
 
-// -----------------------------------------------------------------------
-// DOM REFERENCES
-// -----------------------------------------------------------------------
+/* -----------------------------------------------------------------------
+   DESIGN TOKENS
+   ----------------------------------------------------------------------- */
+:root {
+  /* Color */
+  --bg: #F7F5F2;
+  --surface: rgba(255, 255, 255, 0.55);
+  --surface-solid: #FFFFFF;
+  --surface-border: rgba(255, 255, 255, 0.6);
 
-const skeletonOverlay = document.getElementById('skeleton-overlay');
+  --orange-1: #FF7A30;
+  --orange-2: #FF9F45;
+  --orange-dark: #E85D1F;
+  --orange-tint: rgba(255, 122, 48, 0.12);
 
-const navItems = document.querySelectorAll('.nav-item');
-const pages = document.querySelectorAll('.page');
+  --ink: #1C1B1A;
+  --ink-soft: #8A8680;
+  --ink-faint: #C9C5BE;
 
-// Dashboard
-const progressRingFill = document.getElementById('progress-ring-fill');
-const ringSubLabel = document.getElementById('ring-sub-label');
-const statOutstanding = document.getElementById('stat-outstanding');
-const statEmiDue = document.getElementById('stat-emi-due');
-const statTotalCardDue = document.getElementById('stat-total-card-due');
-const statCardsPaid = document.getElementById('stat-cards-paid');
-const statUpcomingDue = document.getElementById('stat-upcoming-due');
-const dashboardCardsList = document.getElementById('dashboard-cards-list');
+  --success: #34C759;
+  --success-tint: rgba(52, 199, 89, 0.12);
+  --danger: #FF3B30;
+  --danger-tint: rgba(255, 59, 48, 0.12);
 
-const pullRefreshIndicator = document.getElementById('pull-refresh-indicator');
+  /* Type */
+  --font-display: -apple-system, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  --font-body: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Menlo", monospace;
 
-// EMI
-const emiCardsList = document.getElementById('emi-cards-list');
-const btnResetMonth = document.getElementById('btn-reset-month');
+  /* Layout */
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+  --nav-height: 84px;
+  --shadow-soft: 0 8px 30px rgba(28, 27, 26, 0.06), 0 2px 8px rgba(28, 27, 26, 0.04);
+  --shadow-lifted: 0 16px 40px rgba(28, 27, 26, 0.10), 0 4px 12px rgba(28, 27, 26, 0.06);
 
-// Transactions
-const btnOpenExpense = document.getElementById('btn-open-expense');
-const btnOpenPayment = document.getElementById('btn-open-payment');
-const historyList = document.getElementById('history-list');
-const cardBalancesList = document.getElementById('card-balances-list');
-
-// Bottom sheet modal
-const modalBackdrop = document.getElementById('modal-backdrop');
-const txModal = document.getElementById('tx-modal');
-const txModalTitle = document.getElementById('tx-modal-title');
-const txForm = document.getElementById('tx-form');
-const txCardSelect = document.getElementById('tx-card');
-const txAmountInput = document.getElementById('tx-amount');
-const txCommentInput = document.getElementById('tx-comment');
-
-// Confirm dialog
-const confirmBackdrop = document.getElementById('confirm-backdrop');
-const confirmDialog = document.getElementById('confirm-dialog');
-const confirmMessage = document.getElementById('confirm-message');
-const confirmCancelBtn = document.getElementById('confirm-cancel');
-const confirmOkBtn = document.getElementById('confirm-ok');
-
-// Toast
-const toastEl = document.getElementById('toast');
-
-// -----------------------------------------------------------------------
-// APPLICATION STATE
-// -----------------------------------------------------------------------
-
-const state = {
-  currentPage: 'dashboard',
-  dashboard: null,
-  emi: null,
-  transactions: null,
-  pendingTxType: null // 'Expense' | 'Payment' - which modal is currently open
-};
-
-const RING_CIRCUMFERENCE = 377; // 2 * PI * 60, matches the SVG r=60 circle
-const PAGE_ORDER = ['dashboard', 'emi', 'transactions'];
-
-// -----------------------------------------------------------------------
-// INIT
-// -----------------------------------------------------------------------
-
-document.addEventListener('DOMContentLoaded', init);
-
-async function init() {
-  attachNavHandlers();
-  attachRippleTo(document.querySelectorAll('.nav-item, .tx-action-btn, .btn-primary'));
-  attachEmiPageHandlers();
-  attachTransactionsPageHandlers();
-  attachModalHandlers();
-  attachConfirmDialogHandlers();
-  attachPullToRefresh();
-  attachSwipeNavigation();
-
-  await loadDashboard();
-  hideSkeleton();
+  /* Motion */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-// -----------------------------------------------------------------------
-// NAVIGATION
-// -----------------------------------------------------------------------
-
-function attachNavHandlers() {
-  navItems.forEach(function (item) {
-    item.addEventListener('click', function () {
-      navigateTo(item.dataset.target);
-    });
-  });
-}
-
-/**
- * Switches the active page and lazy-loads its data on first visit.
- * @param {string} target - 'dashboard' | 'emi' | 'transactions'
- */
-async function navigateTo(target) {
-  if (target === state.currentPage) return;
-
-  state.currentPage = target;
-
-  pages.forEach(function (page) {
-    page.classList.toggle('page-active', page.dataset.page === target);
-  });
-  navItems.forEach(function (item) {
-    item.classList.toggle('nav-item-active', item.dataset.target === target);
-  });
-
-  if (target === 'emi' && !state.emi) {
-    await loadEmi();
-  } else if (target === 'transactions' && !state.transactions) {
-    await loadTransactions();
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
-/**
- * Reloads whichever page is currently active, bypassing the cache.
- * Used by pull-to-refresh.
- */
-async function refreshCurrentPage() {
-  if (state.currentPage === 'dashboard') await loadDashboard();
-  else if (state.currentPage === 'emi') await loadEmi();
-  else if (state.currentPage === 'transactions') await loadTransactions();
+/* -----------------------------------------------------------------------
+   RESET
+   ----------------------------------------------------------------------- */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
-// -----------------------------------------------------------------------
-// GESTURE: SWIPE LEFT/RIGHT BETWEEN TABS
-// -----------------------------------------------------------------------
-
-function attachSwipeNavigation() {
-  let startX = 0;
-  let startY = 0;
-  let tracking = false;
-
-  document.addEventListener('touchstart', function (e) {
-    // Ignore swipes starting inside the modal/confirm dialog - those
-    // should not trigger a tab change underneath them.
-    if (txModal.classList.contains('visible') || confirmDialog.classList.contains('visible')) {
-      tracking = false;
-      return;
-    }
-    tracking = true;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-  }, { passive: true });
-
-  document.addEventListener('touchend', function (e) {
-    if (!tracking) return;
-    tracking = false;
-
-    const deltaX = e.changedTouches[0].clientX - startX;
-    const deltaY = e.changedTouches[0].clientY - startY;
-
-    const isHorizontal = Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5;
-    if (!isHorizontal) return;
-
-    const currentIndex = PAGE_ORDER.indexOf(state.currentPage);
-    if (deltaX < 0 && currentIndex < PAGE_ORDER.length - 1) {
-      navigateTo(PAGE_ORDER[currentIndex + 1]); // swipe left -> next tab
-    } else if (deltaX > 0 && currentIndex > 0) {
-      navigateTo(PAGE_ORDER[currentIndex - 1]); // swipe right -> previous tab
-    }
-  }, { passive: true });
+html, body {
+  height: 100%;
+  overscroll-behavior-y: none;
 }
 
-// -----------------------------------------------------------------------
-// GESTURE: PULL TO REFRESH
-// -----------------------------------------------------------------------
-
-function attachPullToRefresh() {
-  const PULL_THRESHOLD = 70;
-  const MAX_PULL = 90;
-
-  let startY = 0;
-  let pulling = false;
-  let refreshing = false;
-
-  document.addEventListener('touchstart', function (e) {
-    if (refreshing) return;
-    if (txModal.classList.contains('visible') || confirmDialog.classList.contains('visible')) return;
-    if (window.scrollY > 0) return;
-
-    startY = e.touches[0].clientY;
-    pulling = true;
-    pullRefreshIndicator.classList.add('dragging');
-  }, { passive: true });
-
-  document.addEventListener('touchmove', function (e) {
-    if (!pulling || refreshing) return;
-
-    const delta = e.touches[0].clientY - startY;
-    if (delta <= 0) return;
-
-    const capped = Math.min(delta, MAX_PULL);
-    pullRefreshIndicator.style.transform = `translateX(-50%) translateY(${capped - 30}px)`;
-    pullRefreshIndicator.classList.add('visible');
-  }, { passive: true });
-
-  document.addEventListener('touchend', async function (e) {
-    if (!pulling || refreshing) return;
-    pulling = false;
-    pullRefreshIndicator.classList.remove('dragging');
-
-    const delta = e.changedTouches[0].clientY - startY;
-
-    if (delta > PULL_THRESHOLD) {
-      refreshing = true;
-      pullRefreshIndicator.classList.add('spinning');
-      try {
-        await refreshCurrentPage();
-        showToast('Refreshed');
-      } catch (err) {
-        showToast('Could not refresh.');
-      }
-      refreshing = false;
-      pullRefreshIndicator.classList.remove('spinning', 'visible');
-      pullRefreshIndicator.style.transform = '';
-    } else {
-      pullRefreshIndicator.classList.remove('visible');
-      pullRefreshIndicator.style.transform = '';
-    }
-  }, { passive: true });
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
-// -----------------------------------------------------------------------
-// DATA LOADING
-// -----------------------------------------------------------------------
+button, select, input {
+  font-family: inherit;
+  color: inherit;
+}
 
-async function loadDashboard() {
-  try {
-    state.dashboard = await api.getDashboard();
-    renderDashboard(state.dashboard);
-  } catch (err) {
-    showToast('Could not load dashboard.');
+button {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* -----------------------------------------------------------------------
+   APP SHELL / SAFE AREA
+   ----------------------------------------------------------------------- */
+#app {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
+}
+
+.safe-area-top {
+  height: env(safe-area-inset-top);
+}
+
+/* -----------------------------------------------------------------------
+   PAGES
+   ----------------------------------------------------------------------- */
+.page {
+  display: none;
+  padding: 12px 20px 32px;
+  animation: page-in 0.32s var(--ease-standard);
+}
+
+.page-active {
+  display: block;
+}
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 4px 20px;
+}
+
+.page-title {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.section-block {
+  margin-top: 28px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+
+/* -----------------------------------------------------------------------
+   GLASS CARD (base component)
+   ----------------------------------------------------------------------- */
+.glass-card {
+  background: var(--surface);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+}
+
+/* -----------------------------------------------------------------------
+   DASHBOARD: PROGRESS RING (signature element)
+   ----------------------------------------------------------------------- */
+.ring-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 20px 24px;
+  margin-bottom: 16px;
+}
+
+.ring-wrap {
+  position: relative;
+  width: 140px;
+  height: 140px;
+}
+
+.progress-ring {
+  width: 140px;
+  height: 140px;
+  transform: rotate(-90deg);
+}
+
+.progress-ring-track {
+  fill: none;
+  stroke: var(--orange-tint);
+  stroke-width: 12;
+}
+
+.progress-ring-fill {
+  fill: none;
+  stroke: url(#ring-gradient);
+  stroke-width: 12;
+  stroke-linecap: round;
+  stroke-dasharray: 377; /* 2 * PI * 60 */
+  stroke-dashoffset: 377;
+  transition: stroke-dashoffset 0.8s var(--ease-spring);
+}
+
+.ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.ring-label {
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.ring-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-sub {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* -----------------------------------------------------------------------
+   DASHBOARD: STAT GRID
+   ----------------------------------------------------------------------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 12px;
+  align-items: flex-start;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -----------------------------------------------------------------------
+   CARD STACK (EMI + Dashboard card lists)
+   ----------------------------------------------------------------------- */
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-item {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: card-fade-in 0.4s var(--ease-standard) both;
+}
+
+@keyframes card-fade-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.card-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-name {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.card-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-paid {
+  background: var(--success-tint);
+  color: var(--success);
+}
+
+.badge-due {
+  background: var(--orange-tint);
+  color: var(--orange-dark);
+}
+
+.badge-completed {
+  background: rgba(28, 27, 26, 0.08);
+  color: var(--ink-soft);
+}
+
+.card-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.meta-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 72px;
+}
+
+.meta-label {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.meta-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-comment {
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.card-item-actions {
+  display: flex;
+  margin-top: 4px;
+}
+
+.btn-mark-paid {
+  flex: 1;
+  background: linear-gradient(135deg, var(--orange-1), var(--orange-2));
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  transition: transform 0.15s var(--ease-standard), box-shadow 0.15s var(--ease-standard);
+  box-shadow: 0 6px 16px rgba(255, 122, 48, 0.28);
+}
+
+.btn-mark-paid:active {
+  transform: scale(0.97);
+}
+
+.btn-mark-paid:disabled {
+  background: rgba(28, 27, 26, 0.08);
+  color: var(--ink-faint);
+  box-shadow: none;
+}
+
+/* -----------------------------------------------------------------------
+   BUTTONS (shared)
+   ----------------------------------------------------------------------- */
+.btn-ghost {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--orange-dark);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--orange-tint);
+}
+
+.btn-ghost:active {
+  transform: scale(0.96);
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--orange-1), var(--orange-2));
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 16px;
+  box-shadow: 0 8px 20px rgba(255, 122, 48, 0.3);
+  transition: transform 0.15s var(--ease-standard);
+}
+
+.btn-primary:active {
+  transform: scale(0.97);
+}
+
+.btn-danger {
+  padding: 12px 20px;
+  border-radius: var(--radius-sm);
+  background: var(--danger);
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+/* -----------------------------------------------------------------------
+   RIPPLE EFFECT (applied via JS-added span.ripple)
+   ----------------------------------------------------------------------- */
+.ripple-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  transform: scale(0);
+  animation: ripple-anim 0.5s var(--ease-standard);
+  pointer-events: none;
+}
+
+@keyframes ripple-anim {
+  to {
+    transform: scale(3);
+    opacity: 0;
   }
 }
 
-async function loadEmi() {
-  try {
-    state.emi = await api.getEmi();
-    renderEmiPage(state.emi);
-  } catch (err) {
-    showToast('Could not load EMI cards.');
+/* -----------------------------------------------------------------------
+   TRANSACTIONS PAGE
+   ----------------------------------------------------------------------- */
+.tx-action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.tx-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 12px;
+  border-radius: var(--radius-lg);
+  font-weight: 700;
+  font-size: 15px;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.15s var(--ease-standard);
+}
+
+.tx-action-btn:active {
+  transform: scale(0.96);
+}
+
+.tx-action-icon {
+  font-size: 22px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.tx-action-expense {
+  background: var(--surface-solid);
+  color: var(--danger);
+}
+
+.tx-action-expense .tx-action-icon {
+  background: var(--danger-tint);
+}
+
+.tx-action-payment {
+  background: var(--surface-solid);
+  color: var(--success);
+}
+
+.tx-action-payment .tx-action-icon {
+  background: var(--success-tint);
+}
+
+/* -----------------------------------------------------------------------
+   HISTORY LIST
+   ----------------------------------------------------------------------- */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface-solid);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+  animation: card-fade-in 0.4s var(--ease-standard) both;
+}
+
+.history-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.history-icon-expense {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+.history-icon-payment {
+  background: var(--success-tint);
+  color: var(--success);
+}
+
+.history-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.history-card-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.history-amount {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.amount-expense {
+  color: var(--danger);
+}
+
+.amount-payment {
+  color: var(--success);
+}
+
+.history-sub-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.history-comment {
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-time {
+  font-size: 12px;
+  color: var(--ink-faint);
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.history-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+/* -----------------------------------------------------------------------
+   CARD BALANCES (Transactions page)
+   ----------------------------------------------------------------------- */
+.balance-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--surface-solid);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+  animation: card-fade-in 0.4s var(--ease-standard) both;
+}
+
+.balance-card-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.balance-amount {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--orange-dark);
+}
+
+/* -----------------------------------------------------------------------
+   DUE LABEL (EMI + Dashboard cards)
+   ----------------------------------------------------------------------- */
+.due-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.due-label-overdue {
+  color: var(--danger);
+}
+
+.due-label-soon {
+  color: var(--orange-dark);
+}
+
+/* -----------------------------------------------------------------------
+   PULL TO REFRESH
+   ----------------------------------------------------------------------- */
+.pull-refresh-indicator {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 10px);
+  left: 50%;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--orange-dark);
+  transform: translateX(-50%) translateY(-60px) rotate(0deg);
+  opacity: 0;
+  z-index: 80;
+  transition: opacity 0.2s var(--ease-standard);
+}
+
+.pull-refresh-indicator.dragging {
+  transition: none;
+}
+
+.pull-refresh-indicator.visible {
+  opacity: 1;
+}
+
+.pull-refresh-indicator.spinning {
+  animation: pull-refresh-spin 0.7s linear infinite;
+}
+
+@keyframes pull-refresh-spin {
+  from { transform: translateX(-50%) translateY(10px) rotate(0deg); }
+  to   { transform: translateX(-50%) translateY(10px) rotate(360deg); }
+}
+
+/* -----------------------------------------------------------------------
+   BOTTOM SHEET MODAL
+   ----------------------------------------------------------------------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 27, 26, 0.4);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s var(--ease-standard);
+  z-index: 40;
+}
+
+.modal-backdrop.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.bottom-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--surface-solid);
+  border-radius: 24px 24px 0 0;
+  padding: 12px 24px calc(24px + env(safe-area-inset-bottom));
+  transform: translateY(100%);
+  transition: transform 0.35s var(--ease-spring);
+  z-index: 50;
+  box-shadow: 0 -10px 40px rgba(28, 27, 26, 0.15);
+}
+
+.bottom-sheet.visible {
+  transform: translateY(0);
+}
+
+.bottom-sheet-handle {
+  width: 40px;
+  height: 5px;
+  background: var(--ink-faint);
+  border-radius: 999px;
+  margin: 0 auto 16px;
+}
+
+.bottom-sheet-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+.tx-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.form-select,
+.form-input {
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  border: 1px solid rgba(28, 27, 26, 0.08);
+  font-size: 16px;
+}
+
+.form-select:focus,
+.form-input:focus {
+  outline: 2px solid var(--orange-1);
+  outline-offset: 1px;
+}
+
+/* -----------------------------------------------------------------------
+   CONFIRM DIALOG (Reset Month)
+   ----------------------------------------------------------------------- */
+.confirm-dialog {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  width: min(320px, calc(100vw - 48px));
+  background: var(--surface-solid);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s var(--ease-standard), transform 0.25s var(--ease-spring);
+  z-index: 60;
+  box-shadow: var(--shadow-lifted);
+}
+
+.confirm-dialog.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.confirm-message {
+  font-size: 15px;
+  text-align: center;
+  margin-bottom: 20px;
+  line-height: 1.4;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-actions .btn-ghost,
+.confirm-actions .btn-danger {
+  flex: 1;
+  text-align: center;
+}
+
+/* -----------------------------------------------------------------------
+   TOAST
+   ----------------------------------------------------------------------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 16px);
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(28, 27, 26, 0.92);
+  color: #FFFFFF;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 20px;
+  border-radius: 999px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s var(--ease-standard), transform 0.3s var(--ease-standard);
+  z-index: 70;
+  white-space: nowrap;
+  box-shadow: var(--shadow-lifted);
+}
+
+.toast.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* -----------------------------------------------------------------------
+   BOTTOM NAVIGATION
+   ----------------------------------------------------------------------- */
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--nav-height) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  background: rgba(247, 245, 242, 0.75);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  border-top: 1px solid rgba(28, 27, 26, 0.06);
+  z-index: 30;
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--ink-soft);
+  transition: color 0.2s var(--ease-standard), transform 0.15s var(--ease-standard);
+}
+
+.nav-item:active {
+  transform: scale(0.92);
+}
+
+.nav-icon {
+  font-size: 22px;
+  line-height: 1;
+  filter: grayscale(1) opacity(0.6);
+  transition: filter 0.2s var(--ease-standard);
+}
+
+.nav-label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.nav-item-active {
+  color: var(--orange-dark);
+}
+
+.nav-item-active .nav-icon {
+  filter: grayscale(0) opacity(1);
+}
+
+/* -----------------------------------------------------------------------
+   SKELETON LOADER
+   ----------------------------------------------------------------------- */
+.skeleton-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 100px 20px 20px;
+  gap: 16px;
+  transition: opacity 0.4s var(--ease-standard), visibility 0.4s var(--ease-standard);
+}
+
+.skeleton-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.skeleton-ring {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  margin-bottom: 20px;
+}
+
+.skeleton-ring,
+.skeleton-card {
+  background: linear-gradient(90deg, #ECEAE6 25%, #F5F3F0 37%, #ECEAE6 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.skeleton-card {
+  width: 100%;
+  height: 88px;
+  border-radius: var(--radius-lg);
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* -----------------------------------------------------------------------
+   RESPONSIVE - slightly wider phones / small tablets
+   ----------------------------------------------------------------------- */
+@media (min-width: 480px) {
+  #app {
+    max-width: 480px;
+    margin: 0 auto;
+    box-shadow: var(--shadow-lifted);
   }
-}
 
-async function loadTransactions() {
-  try {
-    state.transactions = await api.getTransactions();
-    renderTransactionsPage(state.transactions);
-  } catch (err) {
-    showToast('Could not load transactions.');
-  }
-}
-
-/**
- * Invalidates cached data affected by a write, then refreshes whichever
- * pages are either currently visible or already cached.
- * @param {Array<string>} keys - Subset of 'dashboard' | 'emi' | 'transactions'
- */
-async function refreshAfterWrite(keys) {
-  const tasks = [];
-  if (keys.includes('dashboard')) tasks.push(loadDashboard());
-  if (keys.includes('emi') && state.emi) tasks.push(loadEmi());
-  if (keys.includes('transactions') && state.transactions) tasks.push(loadTransactions());
-  await Promise.all(tasks);
-}
-
-// -----------------------------------------------------------------------
-// RENDER: DASHBOARD
-// -----------------------------------------------------------------------
-
-function renderDashboard(data) {
-  const summary = data.summary;
-  const totalCards = data.cards.length;
-  const fraction = totalCards > 0 ? summary.cardsPaid / totalCards : 0;
-
-  progressRingFill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - fraction));
-
-  animateNumber(statOutstanding, summary.outstanding, true);
-  animateNumber(statEmiDue, summary.emiDue, true);
-  animateNumber(statTotalCardDue, summary.totalCardDue, true);
-  animateNumber(statCardsPaid, summary.cardsPaid, false);
-  animateNumber(statUpcomingDue, summary.upcomingDue, false);
-
-  ringSubLabel.textContent = `${summary.cardsPaid} of ${totalCards} cards paid this month`;
-
-  dashboardCardsList.innerHTML = data.cards.map(buildDashboardCardHtml).join('');
-}
-
-function buildDashboardCardHtml(card) {
-  const badge = card.completed
-    ? '<span class="card-badge badge-completed">Completed</span>'
-    : card.paid
-      ? '<span class="card-badge badge-paid">Paid</span>'
-      : '<span class="card-badge badge-due">Due</span>';
-
-  return `
-    <div class="card-item glass-card">
-      <div class="card-item-top">
-        <span class="card-name">${escapeHtml(card.card)}</span>
-        ${badge}
-      </div>
-      <div class="card-item-meta">
-        <div class="meta-pair">
-          <span class="meta-label">Current Due</span>
-          <span class="meta-value">${formatCurrency(card.currentDue)}</span>
-        </div>
-        <div class="meta-pair">
-          <span class="meta-label">EMI</span>
-          <span class="meta-value">${formatCurrency(card.emi)}</span>
-        </div>
-        <div class="meta-pair">
-          <span class="meta-label">Months Left</span>
-          <span class="meta-value">${card.monthsRemaining}</span>
-        </div>
-      </div>
-      ${buildDueLabelHtml(card.dueLabel)}
-    </div>
-  `;
-}
-
-// -----------------------------------------------------------------------
-// RENDER: EMI PAGE
-// -----------------------------------------------------------------------
-
-function renderEmiPage(data) {
-  emiCardsList.innerHTML = data.cards.map(buildEmiCardHtml).join('');
-  attachRippleTo(emiCardsList.querySelectorAll('.btn-mark-paid:not(:disabled)'));
-}
-
-function buildEmiCardHtml(card) {
-  const badge = card.completed
-    ? '<span class="card-badge badge-completed">Completed</span>'
-    : card.paid
-      ? '<span class="card-badge badge-paid">Paid</span>'
-      : '<span class="card-badge badge-due">Due</span>';
-
-  const disabled = card.completed || card.paid;
-  const buttonLabel = card.completed ? 'Completed' : card.paid ? 'Paid' : 'Mark Paid';
-
-  return `
-    <div class="card-item glass-card">
-      <div class="card-item-top">
-        <span class="card-name">${escapeHtml(card.card)}</span>
-        ${badge}
-      </div>
-      <div class="card-item-meta">
-        <div class="meta-pair">
-          <span class="meta-label">EMI</span>
-          <span class="meta-value">${formatCurrency(card.emi)}</span>
-        </div>
-        <div class="meta-pair">
-          <span class="meta-label">Bill Date</span>
-          <span class="meta-value">${escapeHtml(card.billDate)}</span>
-        </div>
-        <div class="meta-pair">
-          <span class="meta-label">Due Date</span>
-          <span class="meta-value">${escapeHtml(card.dueDate)}</span>
-        </div>
-        <div class="meta-pair">
-          <span class="meta-label">Months Left</span>
-          <span class="meta-value">${card.monthsRemaining}</span>
-        </div>
-      </div>
-      ${buildDueLabelHtml(card.dueLabel)}
-      <div class="card-item-actions">
-        <button
-          class="btn-mark-paid ripple-container"
-          type="button"
-          data-row="${card.rowNumber}"
-          ${disabled ? 'disabled' : ''}
-        >${buttonLabel}</button>
-      </div>
-    </div>
-  `;
-}
-
-/**
- * Renders a due-date label with color-coding: red if overdue, orange if
- * due today/tomorrow, neutral gray otherwise. Returns '' if there's no
- * label to show (keeps card markup clean).
- * @param {string} label
- * @return {string}
- */
-function buildDueLabelHtml(label) {
-  if (!label) return '';
-  let cssClass = 'due-label';
-  if (label.indexOf('Overdue') === 0) {
-    cssClass += ' due-label-overdue';
-  } else if (label === 'Due today' || label === 'Due tomorrow') {
-    cssClass += ' due-label-soon';
-  }
-  return `<span class="${cssClass}">${escapeHtml(label)}</span>`;
-}
-
-function attachEmiPageHandlers() {
-  // Event delegation: the card list is re-rendered often, so we attach
-  // one listener to the container instead of re-binding per button.
-  emiCardsList.addEventListener('click', async function (e) {
-    const button = e.target.closest('.btn-mark-paid');
-    if (!button || button.disabled) return;
-
-    const rowNumber = Number(button.dataset.row);
-    button.disabled = true;
-
-    try {
-      await api.markPaid(rowNumber);
-      showToast('Card marked as paid');
-      await refreshAfterWrite(['dashboard', 'emi']);
-    } catch (err) {
-      showToast('Could not mark card as paid.');
-      button.disabled = false;
-    }
-  });
-
-  btnResetMonth.addEventListener('click', function () {
-    showConfirm('Reset Paid status for every card this month?', async function () {
-      try {
-        await api.resetMonth();
-        showToast('Month reset');
-        await refreshAfterWrite(['dashboard', 'emi']);
-      } catch (err) {
-        showToast('Could not reset month.');
-      }
-    });
-  });
-}
-
-// -----------------------------------------------------------------------
-// RENDER: TRANSACTIONS PAGE
-// -----------------------------------------------------------------------
-
-function renderTransactionsPage(data) {
-  populateCardDropdown(data.cards);
-
-  cardBalancesList.innerHTML = data.balances.map(buildBalanceItemHtml).join('');
-
-  historyList.innerHTML = data.history.length
-    ? data.history.map(buildHistoryItemHtml).join('')
-    : '<p class="history-empty">No transactions yet.</p>';
-}
-
-function buildBalanceItemHtml(balance) {
-  return `
-    <div class="balance-item">
-      <span class="balance-card-name">${escapeHtml(balance.card)}</span>
-      <span class="balance-amount">${formatCurrency(balance.currentDue)}</span>
-    </div>
-  `;
-}
-
-function populateCardDropdown(cards) {
-  txCardSelect.innerHTML = cards
-    .map(function (card) { return `<option value="${escapeHtml(card)}">${escapeHtml(card)}</option>`; })
-    .join('');
-}
-
-function buildHistoryItemHtml(tx) {
-  const isExpense = tx.type === 'Expense';
-  const icon = isExpense ? '↑' : '↓';
-  const iconClass = isExpense ? 'history-icon-expense' : 'history-icon-payment';
-  const amountClass = isExpense ? 'amount-expense' : 'amount-payment';
-  const sign = isExpense ? '+' : '−';
-
-  return `
-    <div class="history-item">
-      <div class="history-icon ${iconClass}">${icon}</div>
-      <div class="history-body">
-        <div class="history-top-row">
-          <span class="history-card-name">${escapeHtml(tx.card)}</span>
-          <span class="history-amount ${amountClass}">${sign}${formatCurrency(tx.amount)}</span>
-        </div>
-        <div class="history-sub-row">
-          <span class="history-comment">${escapeHtml(tx.comment || '')}</span>
-          <span class="history-time">${escapeHtml(tx.relativeTime)}</span>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function attachTransactionsPageHandlers() {
-  btnOpenExpense.addEventListener('click', function () { openTxModal('Expense'); });
-  btnOpenPayment.addEventListener('click', function () { openTxModal('Payment'); });
-}
-
-// -----------------------------------------------------------------------
-// BOTTOM SHEET MODAL (Add Expense / Payment)
-// -----------------------------------------------------------------------
-
-async function openTxModal(type) {
-  state.pendingTxType = type;
-  txModalTitle.textContent = type === 'Expense' ? 'Add Expense' : 'Add Payment';
-  txForm.reset();
-
-  // Card dropdown needs the transactions data even if that page was
-  // never visited yet (user can add a transaction straight from anywhere
-  // once we wire buttons elsewhere - kept lazy-safe here too).
-  if (!state.transactions) {
-    await loadTransactions();
+  .bottom-nav,
+  .skeleton-overlay {
+    max-width: 480px;
+    margin: 0 auto;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
   }
 
-  modalBackdrop.classList.add('visible');
-  txModal.classList.add('visible');
-}
-
-function closeTxModal() {
-  modalBackdrop.classList.remove('visible');
-  txModal.classList.remove('visible');
-}
-
-function attachModalHandlers() {
-  modalBackdrop.addEventListener('click', closeTxModal);
-
-  txForm.addEventListener('submit', async function (e) {
-    e.preventDefault();
-
-    const card = txCardSelect.value;
-    const amount = Number(txAmountInput.value);
-    const comment = txCommentInput.value.trim();
-    const type = state.pendingTxType;
-
-    if (!card || !amount || amount <= 0) {
-      showToast('Enter a valid amount.');
-      return;
-    }
-
-    try {
-      if (type === 'Expense') {
-        await api.addExpense(card, amount, comment);
-        showToast('Expense Added');
-      } else {
-        await api.addPayment(card, amount, comment);
-        showToast('Payment Added');
-      }
-      closeTxModal();
-      await refreshAfterWrite(['dashboard', 'transactions']);
-    } catch (err) {
-      showToast('Could not save transaction.');
-    }
-  });
-}
-
-// -----------------------------------------------------------------------
-// CONFIRM DIALOG (generic - currently used by Reset Month)
-// -----------------------------------------------------------------------
-
-let pendingConfirmAction = null;
-
-function showConfirm(message, onConfirm) {
-  confirmMessage.textContent = message;
-  pendingConfirmAction = onConfirm;
-  confirmBackdrop.classList.add('visible');
-  confirmDialog.classList.add('visible');
-}
-
-function hideConfirm() {
-  confirmBackdrop.classList.remove('visible');
-  confirmDialog.classList.remove('visible');
-  pendingConfirmAction = null;
-}
-
-function attachConfirmDialogHandlers() {
-  confirmBackdrop.addEventListener('click', hideConfirm);
-  confirmCancelBtn.addEventListener('click', hideConfirm);
-  confirmOkBtn.addEventListener('click', async function () {
-    const action = pendingConfirmAction;
-    hideConfirm();
-    if (action) await action();
-  });
-}
-
-// -----------------------------------------------------------------------
-// TOAST
-// -----------------------------------------------------------------------
-
-let toastTimer = null;
-
-function showToast(message) {
-  toastEl.textContent = message;
-  toastEl.classList.add('visible');
-
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(function () {
-    toastEl.classList.remove('visible');
-  }, 2200);
-}
-
-// -----------------------------------------------------------------------
-// SKELETON LOADER
-// -----------------------------------------------------------------------
-
-function hideSkeleton() {
-  skeletonOverlay.classList.add('hidden');
-}
-
-// -----------------------------------------------------------------------
-// RIPPLE EFFECT
-// -----------------------------------------------------------------------
-
-/**
- * Attaches a native-feeling ripple animation to one or more elements.
- * Safe to call repeatedly on re-rendered elements (e.g. after each
- * EMI list render) since it only adds a listener to each element once.
- * @param {NodeList|Array<Element>} elements
- */
-function attachRippleTo(elements) {
-  elements.forEach(function (el) {
-    if (el.dataset.rippleBound) return;
-    el.dataset.rippleBound = 'true';
-    el.classList.add('ripple-container');
-
-    el.addEventListener('click', function (e) {
-      const rect = el.getBoundingClientRect();
-      const ripple = document.createElement('span');
-      const size = Math.max(rect.width, rect.height);
-
-      ripple.className = 'ripple';
-      ripple.style.width = ripple.style.height = `${size}px`;
-      ripple.style.left = `${e.clientX - rect.left - size / 2}px`;
-      ripple.style.top = `${e.clientY - rect.top - size / 2}px`;
-
-      el.appendChild(ripple);
-      ripple.addEventListener('animationend', function () { ripple.remove(); });
-    });
-  });
-}
-
-// -----------------------------------------------------------------------
-// UTILITIES
-// -----------------------------------------------------------------------
-
-/**
- * Formats a number as Indian Rupee currency, e.g. 107169 -> "₹1,07,169".
- * @param {number} amount
- * @return {string}
- */
-function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0
-  }).format(amount || 0);
-}
-
-/**
- * Animates a number counting upward from its current displayed value to
- * a new target value, per the spec's "numbers count upward" requirement.
- * @param {HTMLElement} el
- * @param {number} target
- * @param {boolean} isCurrency - Whether to format as currency or a plain int.
- */
-function animateNumber(el, target, isCurrency) {
-  const start = Number(el.dataset.rawValue) || 0;
-  const duration = 600;
-  const startTime = performance.now();
-
-  function tick(now) {
-    const progress = Math.min((now - startTime) / duration, 1);
-    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
-    const current = Math.round(start + (target - start) * eased);
-
-    el.textContent = isCurrency ? formatCurrency(current) : String(current);
-
-    if (progress < 1) {
-      requestAnimationFrame(tick);
-    } else {
-      el.dataset.rawValue = String(target);
-    }
+  .bottom-sheet {
+    max-width: 480px;
+    left: 50%;
+    right: auto;
+    margin-left: -240px;
   }
-
-  requestAnimationFrame(tick);
-}
-
-/**
- * Escapes HTML special characters to prevent markup injection when
- * rendering user-entered comments/card names into innerHTML.
- * @param {*} value
- * @return {string}
- */
-function escapeHtml(value) {
-  const div = document.createElement('div');
-  div.textContent = String(value == null ? '' : value);
-  return div.innerHTML;
 }
