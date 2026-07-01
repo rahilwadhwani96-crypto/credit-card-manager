@@ -1,205 +1,361 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-  <title>Cards</title>
+/**
+ * Helpers.gs
+ * ---------------------------------------------------------------------------
+ * Shared utility functions used across the backend. Nothing in this file
+ * talks to the frontend directly - Backend.gs orchestrates these helpers
+ * and exposes the actual API endpoints.
+ *
+ * Every function here follows the performance rule from the spec:
+ * batch reads/writes, never call SpreadsheetApp repeatedly in a loop.
+ * ---------------------------------------------------------------------------
+ */
 
-  <!-- PWA / iOS Home Screen metadata -->
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Cards" />
-  <meta name="theme-color" content="#FF7A30" />
-  <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="assets/icons/icon-180.png" />
+// -----------------------------------------------------------------------
+// SHEET ACCESS
+// -----------------------------------------------------------------------
 
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
+/**
+ * Returns the Sheet2 (EMI) sheet object.
+ * @return {Sheet}
+ */
+function getEmiSheet_() {
+  return SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.SHEETS.EMI);
+}
 
-  <!-- ===================================================================
-       APP SHELL
-       =================================================================== -->
-  <div id="app">
+/**
+ * Returns the Sheet3 (Transactions) sheet object.
+ * @return {Sheet}
+ */
+function getTransactionsSheet_() {
+  return SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.SHEETS.TRANSACTIONS);
+}
 
-    <!-- Safe-area spacer for the iPhone notch / status bar -->
-    <div class="safe-area-top"></div>
+// -----------------------------------------------------------------------
+// EMI (Sheet2) READ / TRANSFORM
+// -----------------------------------------------------------------------
 
-    <!-- =================================================================
-         SKELETON LOADER (shown until first data fetch resolves)
-         ================================================================= -->
-    <div id="skeleton-overlay" class="skeleton-overlay">
-      <div class="skeleton-ring"></div>
-      <div class="skeleton-card"></div>
-      <div class="skeleton-card"></div>
-      <div class="skeleton-card"></div>
-    </div>
+/**
+ * Reads every EMI card row in a single batched call and returns them as
+ * an array of clean objects. Stops before the "Total" row and ignores
+ * any stray data below it (e.g. leftover test values).
+ *
+ * @return {Array<Object>} Array of card objects, each with a 1-based
+ *         `rowNumber` property so Backend.gs can target updates precisely.
+ */
+function readEmiRows_() {
+  const sheet = getEmiSheet_();
+  const cols = CONFIG.EMI_SHEET.COLUMNS;
+  const firstRow = CONFIG.EMI_SHEET.FIRST_DATA_ROW;
+  const lastRow = sheet.getLastRow();
 
-    <!-- =================================================================
-         PAGE: DASHBOARD
-         ================================================================= -->
-    <main id="page-dashboard" class="page page-active" data-page="dashboard">
-      <header class="page-header">
-        <h1 class="page-title">Dashboard</h1>
-      </header>
+  if (lastRow < firstRow) return [];
 
-      <section class="ring-card glass-card">
-        <div class="ring-wrap">
-          <svg class="progress-ring" viewBox="0 0 140 140">
-            <defs>
-              <linearGradient id="ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#FF7A30" />
-                <stop offset="100%" stop-color="#FF9F45" />
-              </linearGradient>
-            </defs>
-            <circle class="progress-ring-track" cx="70" cy="70" r="60"></circle>
-            <circle id="progress-ring-fill" class="progress-ring-fill" cx="70" cy="70" r="60"></circle>
-          </svg>
-          <div class="ring-center">
-            <span class="ring-label">Outstanding</span>
-            <span id="stat-outstanding" class="ring-value">₹0</span>
-          </div>
-        </div>
-        <div class="ring-sub" id="ring-sub-label">0 of 0 cards paid this month</div>
-      </section>
+  const numCols = Math.max.apply(null, Object.values(cols));
+  const values = sheet.getRange(firstRow, 1, lastRow - firstRow + 1, numCols).getValues();
 
-      <section class="stat-grid">
-        <div class="stat-card glass-card">
-          <span class="stat-label">EMI Due</span>
-          <span id="stat-emi-due" class="stat-value">₹0</span>
-        </div>
-        <div class="stat-card glass-card">
-          <span class="stat-label">Cards Paid</span>
-          <span id="stat-cards-paid" class="stat-value">0</span>
-        </div>
-        <div class="stat-card glass-card">
-          <span class="stat-label">Upcoming Due</span>
-          <span id="stat-upcoming-due" class="stat-value">0</span>
-        </div>
-      </section>
+  const cards = [];
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const cardName = row[cols.CARD - 1];
 
-      <section class="section-block">
-        <h2 class="section-title">Your Cards</h2>
-        <div id="dashboard-cards-list" class="card-stack">
-          <!-- populated by app.js -->
-        </div>
-      </section>
-    </main>
+    // Stop entirely once we hit the Total row or an empty Card cell.
+    if (!cardName || String(cardName).trim() === CONFIG.EMI_SHEET.TOTAL_ROW_LABEL) {
+      break;
+    }
 
-    <!-- =================================================================
-         PAGE: EMI
-         ================================================================= -->
-    <main id="page-emi" class="page" data-page="emi">
-      <header class="page-header">
-        <h1 class="page-title">EMI</h1>
-        <button id="btn-reset-month" class="btn-ghost" type="button">Reset Month</button>
-      </header>
+    cards.push(rowToEmiObject_(row, cols, firstRow + i));
+  }
+  return cards;
+}
 
-      <div id="emi-cards-list" class="card-stack">
-        <!-- populated by app.js -->
-      </div>
-    </main>
+/**
+ * Converts a raw Sheet2 row (array of cell values) into a clean object.
+ * @param {Array} row - Raw row values.
+ * @param {Object} cols - CONFIG.EMI_SHEET.COLUMNS map.
+ * @param {number} rowNumber - The 1-based row number this data came from.
+ * @return {Object}
+ */
+function rowToEmiObject_(row, cols, rowNumber) {
+  return {
+    rowNumber: rowNumber,
+    card: String(row[cols.CARD - 1] || '').trim(),
+    emi: Number(row[cols.EMI - 1]) || 0,
+    billDate: row[cols.BILL_DATE - 1],
+    forNow: Number(row[cols.FOR_NOW - 1]) || 0,
+    dueDate: row[cols.DUE_DATE - 1],
+    paid: isPaid_(row[cols.PAID - 1]),
+    comment: String(row[cols.COMMENT - 1] || ''),
+    monthsRemaining: Number(row[cols.MONTHS_REMAINING - 1]) || 0
+  };
+}
 
-    <!-- =================================================================
-         PAGE: TRANSACTIONS
-         ================================================================= -->
-    <main id="page-transactions" class="page" data-page="transactions">
-      <header class="page-header">
-        <h1 class="page-title">Transactions</h1>
-      </header>
+/**
+ * Case-insensitive check for whether a Paid cell counts as "Yes".
+ * Handles existing inconsistent data (e.g. "yes" vs "Yes").
+ * @param {*} value - Raw cell value.
+ * @return {boolean}
+ */
+function isPaid_(value) {
+  return String(value || '').trim().toLowerCase() === CONFIG.PAID_VALUE.toLowerCase();
+}
 
-      <div class="tx-action-row">
-        <button id="btn-open-expense" class="tx-action-btn tx-action-expense" type="button">
-          <span class="tx-action-icon">↑</span>
-          <span>Expense</span>
-        </button>
-        <button id="btn-open-payment" class="tx-action-btn tx-action-payment" type="button">
-          <span class="tx-action-icon">↓</span>
-          <span>Payment</span>
-        </button>
-      </div>
+// -----------------------------------------------------------------------
+// TRANSACTIONS (Sheet3) READ / TRANSFORM
+// -----------------------------------------------------------------------
 
-      <section class="section-block">
-        <h2 class="section-title">Card Balances</h2>
-        <div id="card-balances-list" class="card-stack">
-          <!-- populated by app.js -->
-        </div>
-      </section>
+/**
+ * Reads the Sheet3 summary block (rows 1-9: Card Name -> Total Due) in
+ * a single batched call.
+ * @return {Array<Object>} Array of { rowNumber, card, totalDue }.
+ */
+function readTransactionSummary_() {
+  const sheet = getTransactionsSheet_();
+  const s = CONFIG.TRANSACTIONS_SHEET.SUMMARY;
+  const numRows = s.LAST_ROW - s.FIRST_ROW + 1;
+  const values = sheet.getRange(s.FIRST_ROW, 1, numRows, 2).getValues();
 
-      <section class="section-block">
-        <h2 class="section-title">History</h2>
-        <div id="history-list" class="history-list">
-          <!-- populated by app.js -->
-        </div>
-      </section>
-    </main>
+  const summary = [];
+  for (let i = 0; i < values.length; i++) {
+    const cardName = values[i][s.COLUMNS.CARD - 1];
+    if (!cardName) continue;
+    summary.push({
+      rowNumber: s.FIRST_ROW + i,
+      card: String(cardName).trim(),
+      totalDue: Number(values[i][s.COLUMNS.TOTAL_DUE - 1]) || 0
+    });
+  }
+  return summary;
+}
 
-    <!-- =================================================================
-         BOTTOM SHEET MODAL (Add Expense / Payment)
-         ================================================================= -->
-    <div id="modal-backdrop" class="modal-backdrop"></div>
-    <div id="tx-modal" class="bottom-sheet">
-      <div class="bottom-sheet-handle"></div>
-      <h3 id="tx-modal-title" class="bottom-sheet-title">Add Expense</h3>
+/**
+ * Updates the Total Due for a single card in the Sheet3 summary block.
+ * Writes only the one changed cell (summary block is only 9 rows, so
+ * this stays well within the "minimal API calls" performance budget).
+ *
+ * @param {string} cardName - Card to update.
+ * @param {number} delta - Amount to add (positive) or subtract (negative).
+ * @return {number} The new total due for that card.
+ */
+function adjustTotalDue_(cardName, delta) {
+  const sheet = getTransactionsSheet_();
+  const s = CONFIG.TRANSACTIONS_SHEET.SUMMARY;
+  const summary = readTransactionSummary_();
+  const match = summary.find(function (row) {
+    return row.card.toLowerCase() === cardName.toLowerCase();
+  });
 
-      <form id="tx-form" class="tx-form">
-        <label class="form-field">
-          <span class="form-label">Card</span>
-          <select id="tx-card" class="form-select" required></select>
-        </label>
+  if (match) {
+    const newTotal = match.totalDue + delta;
+    sheet.getRange(match.rowNumber, s.COLUMNS.TOTAL_DUE).setValue(newTotal);
+    return newTotal;
+  }
 
-        <label class="form-field">
-          <span class="form-label">Amount</span>
-          <input id="tx-amount" class="form-input" type="number" inputmode="decimal" min="1" step="1" placeholder="0" required />
-        </label>
+  // Card isn't tracked in the summary block yet - self-heal by creating
+  // a new row, seeded from Sheet2's "For Now" value so the total stays
+  // consistent with what the Dashboard already shows for this card.
+  const emiRows = readEmiRows_();
+  const emiMatch = emiRows.find(function (row) {
+    return row.card.toLowerCase() === cardName.toLowerCase();
+  });
+  if (!emiMatch) {
+    throw new Error('Card "' + cardName + '" not found on the EMI sheet.');
+  }
 
-        <label class="form-field">
-          <span class="form-label">Comment</span>
-          <input id="tx-comment" class="form-input" type="text" placeholder="Optional" />
-        </label>
+  const blankRow = findBlankSummaryRow_(summary);
+  if (!blankRow) {
+    throw new Error('Sheet3 summary block is full - cannot track a new card.');
+  }
 
-        <button id="tx-submit" class="btn-primary" type="submit">Save</button>
-      </form>
-    </div>
+  const newTotal = emiMatch.forNow + delta;
+  sheet.getRange(blankRow, 1, 1, 2).setValues([[cardName, newTotal]]);
+  return newTotal;
+}
 
-    <!-- =================================================================
-         CONFIRM DIALOG (Reset Month)
-         ================================================================= -->
-    <div id="confirm-backdrop" class="modal-backdrop"></div>
-    <div id="confirm-dialog" class="confirm-dialog">
-      <p id="confirm-message" class="confirm-message">Are you sure?</p>
-      <div class="confirm-actions">
-        <button id="confirm-cancel" class="btn-ghost" type="button">Cancel</button>
-        <button id="confirm-ok" class="btn-danger" type="button">Confirm</button>
-      </div>
-    </div>
+/**
+ * Finds the first unused row within the Sheet3 summary block range.
+ * @param {Array<Object>} summary - Result of readTransactionSummary_().
+ * @return {number|null} A 1-based row number, or null if the block is full.
+ */
+function findBlankSummaryRow_(summary) {
+  const s = CONFIG.TRANSACTIONS_SHEET.SUMMARY;
+  const usedRows = summary.map(function (row) { return row.rowNumber; });
+  for (let row = s.FIRST_ROW; row <= s.LAST_ROW; row++) {
+    if (usedRows.indexOf(row) === -1) return row;
+  }
+  return null;
+}
 
-    <!-- =================================================================
-         TOAST
-         ================================================================= -->
-    <div id="toast" class="toast"></div>
+/**
+ * Returns every EMI card merged with its live balance: Sheet3's tracked
+ * total if it exists, otherwise Sheet2's "For Now" value as a sensible
+ * starting point. This is the single source of truth for "current due"
+ * used by both the Dashboard and the Transactions page.
+ * @return {Array<Object>} Array of { card, currentDue }.
+ */
+function getCardBalances_() {
+  const emiRows = readEmiRows_();
+  const summary = readTransactionSummary_();
 
-    <!-- =================================================================
-         BOTTOM NAVIGATION
-         ================================================================= -->
-    <nav class="bottom-nav">
-      <button class="nav-item nav-item-active" data-target="dashboard" type="button">
-        <span class="nav-icon">🏠</span>
-        <span class="nav-label">Dashboard</span>
-      </button>
-      <button class="nav-item" data-target="emi" type="button">
-        <span class="nav-icon">💳</span>
-        <span class="nav-label">EMI</span>
-      </button>
-      <button class="nav-item" data-target="transactions" type="button">
-        <span class="nav-icon">💸</span>
-        <span class="nav-label">Transactions</span>
-      </button>
-    </nav>
+  return emiRows.map(function (row) {
+    const match = summary.find(function (s) {
+      return s.card.toLowerCase() === row.card.toLowerCase();
+    });
+    return {
+      card: row.card,
+      currentDue: match ? match.totalDue : row.forNow
+    };
+  });
+}
 
-  </div>
+/**
+ * Reads every transaction log row (from row 16 onward) in a single
+ * batched call, newest first.
+ * @return {Array<Object>} Array of transaction objects.
+ */
+function readTransactionLog_() {
+  const sheet = getTransactionsSheet_();
+  const log = CONFIG.TRANSACTIONS_SHEET.LOG;
+  const firstRow = log.FIRST_DATA_ROW;
+  const lastRow = sheet.getLastRow();
 
-  <script src="api.js"></script>
-  <script src="app.js"></script>
-</body>
-</html>
+  if (lastRow < firstRow) return [];
+
+  const values = sheet.getRange(firstRow, 1, lastRow - firstRow + 1, 5).getValues();
+
+  const transactions = [];
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    if (!row[log.COLUMNS.CARD - 1]) continue; // skip blank rows
+    transactions.push({
+      rowNumber: firstRow + i,
+      card: String(row[log.COLUMNS.CARD - 1]).trim(),
+      type: String(row[log.COLUMNS.TYPE - 1]).trim(),
+      amount: Number(row[log.COLUMNS.AMOUNT - 1]) || 0,
+      dateTime: row[log.COLUMNS.DATE_TIME - 1],
+      comment: String(row[log.COLUMNS.COMMENT - 1] || '')
+    });
+  }
+
+  // Newest first for the History feed.
+  transactions.sort(function (a, b) {
+    return new Date(b.dateTime) - new Date(a.dateTime);
+  });
+
+  return transactions;
+}
+
+/**
+ * Appends a single transaction row to the Sheet3 log in one call.
+ * @param {string} card
+ * @param {string} type - CONFIG.TRANSACTIONS_SHEET.TYPES.EXPENSE or .PAYMENT
+ * @param {number} amount
+ * @param {string} comment
+ */
+function appendTransactionLog_(card, type, amount, comment) {
+  const sheet = getTransactionsSheet_();
+  const nextRow = Math.max(sheet.getLastRow() + 1, CONFIG.TRANSACTIONS_SHEET.LOG.FIRST_DATA_ROW);
+  sheet.getRange(nextRow, 1, 1, 5).setValues([[
+    card,
+    type,
+    amount,
+    nowTimestamp_(),
+    comment || ''
+  ]]);
+}
+
+// -----------------------------------------------------------------------
+// DATE / TIME HELPERS
+// -----------------------------------------------------------------------
+
+/**
+ * Returns the current timestamp as a JS Date (stored natively in the
+ * sheet so Sheets handles date formatting/serialization).
+ * @return {Date}
+ */
+function nowTimestamp_() {
+  return new Date();
+}
+
+/**
+ * Converts a date into a human-friendly relative label for the History
+ * feed: "Today", "Yesterday", "3 days ago", or a plain date beyond that.
+ * @param {Date|string} dateValue
+ * @return {string}
+ */
+function formatRelativeTime_(dateValue) {
+  const date = new Date(dateValue);
+  if (isNaN(date.getTime())) return '';
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((startOfToday - startOfDate) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays > 1 && diffDays < 7) return diffDays + ' days ago';
+
+  return Utilities.formatDate(date, CONFIG.TIMEZONE, 'dd MMM yyyy');
+}
+
+/**
+ * Converts a day-of-month due date into a human-friendly label relative
+ * to today, e.g. "Due today", "Due in 3 days", "Overdue by 2 days".
+ *
+ * If the due day has already passed this month and the card is unpaid,
+ * it's reported as overdue. If it's passed but already paid this cycle,
+ * the label rolls forward to next month's occurrence instead.
+ *
+ * @param {*} dueDayOfMonth - The day-of-month number (1-31) from Sheet2.
+ * @param {boolean} isPaid - Whether this card is already marked paid.
+ * @return {string}
+ */
+function computeDueLabel_(dueDayOfMonth, isPaid) {
+  const day = Number(dueDayOfMonth);
+  if (!day || day < 1 || day > 31) return '';
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const thisMonthDue = new Date(now.getFullYear(), now.getMonth(), day);
+  const diffThisMonth = Math.round((thisMonthDue - todayStart) / (1000 * 60 * 60 * 24));
+
+  if (diffThisMonth >= 0) {
+    if (diffThisMonth === 0) return 'Due today';
+    if (diffThisMonth === 1) return 'Due tomorrow';
+    return 'Due in ' + diffThisMonth + ' days';
+  }
+
+  if (!isPaid) {
+    return 'Overdue by ' + Math.abs(diffThisMonth) + ' days';
+  }
+
+  const nextMonthDue = new Date(now.getFullYear(), now.getMonth() + 1, day);
+  const diffNext = Math.round((nextMonthDue - todayStart) / (1000 * 60 * 60 * 24));
+  return 'Due in ' + diffNext + ' days';
+}
+
+// -----------------------------------------------------------------------
+// API RESPONSE BUILDERS
+// -----------------------------------------------------------------------
+
+/**
+ * Wraps a payload in a consistent JSON success response for the frontend.
+ * @param {*} data
+ * @return {TextOutput}
+ */
+function jsonSuccess_(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify({ success: true, data: data }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Wraps an error message in a consistent JSON error response.
+ * @param {string} message
+ * @return {TextOutput}
+ */
+function jsonError_(message) {
+  return ContentService
+    .createTextOutput(JSON.stringify({ success: false, error: String(message) }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
