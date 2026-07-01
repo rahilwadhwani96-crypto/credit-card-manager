@@ -236,7 +236,7 @@ button {
    ----------------------------------------------------------------------- */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
@@ -639,6 +639,46 @@ button {
 
 .due-label-soon {
   color: var(--orange-dark);
+}
+
+/* -----------------------------------------------------------------------
+   PULL TO REFRESH
+   ----------------------------------------------------------------------- */
+.pull-refresh-indicator {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 10px);
+  left: 50%;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--orange-dark);
+  transform: translateX(-50%) translateY(-60px) rotate(0deg);
+  opacity: 0;
+  z-index: 80;
+  transition: opacity 0.2s var(--ease-standard);
+}
+
+.pull-refresh-indicator.dragging {
+  transition: none;
+}
+
+.pull-refresh-indicator.visible {
+  opacity: 1;
+}
+
+.pull-refresh-indicator.spinning {
+  animation: pull-refresh-spin 0.7s linear infinite;
+}
+
+@keyframes pull-refresh-spin {
+  from { transform: translateX(-50%) translateY(10px) rotate(0deg); }
+  to   { transform: translateX(-50%) translateY(10px) rotate(360deg); }
 }
 
 /* -----------------------------------------------------------------------
