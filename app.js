@@ -21,9 +21,12 @@ const progressRingFill = document.getElementById('progress-ring-fill');
 const ringSubLabel = document.getElementById('ring-sub-label');
 const statOutstanding = document.getElementById('stat-outstanding');
 const statEmiDue = document.getElementById('stat-emi-due');
+const statTotalCardDue = document.getElementById('stat-total-card-due');
 const statCardsPaid = document.getElementById('stat-cards-paid');
 const statUpcomingDue = document.getElementById('stat-upcoming-due');
 const dashboardCardsList = document.getElementById('dashboard-cards-list');
+
+const pullRefreshIndicator = document.getElementById('pull-refresh-indicator');
 
 // EMI
 const emiCardsList = document.getElementById('emi-cards-list');
@@ -67,6 +70,7 @@ const state = {
 };
 
 const RING_CIRCUMFERENCE = 377; // 2 * PI * 60, matches the SVG r=60 circle
+const PAGE_ORDER = ['dashboard', 'emi', 'transactions'];
 
 // -----------------------------------------------------------------------
 // INIT
@@ -81,6 +85,8 @@ async function init() {
   attachTransactionsPageHandlers();
   attachModalHandlers();
   attachConfirmDialogHandlers();
+  attachPullToRefresh();
+  attachSwipeNavigation();
 
   await loadDashboard();
   hideSkeleton();
@@ -119,6 +125,128 @@ async function navigateTo(target) {
   } else if (target === 'transactions' && !state.transactions) {
     await loadTransactions();
   }
+}
+
+/**
+ * Reloads whichever page is currently active, bypassing the cache.
+ * Used by pull-to-refresh.
+ */
+async function refreshCurrentPage() {
+  if (state.currentPage === 'dashboard') await loadDashboard();
+  else if (state.currentPage === 'emi') await loadEmi();
+  else if (state.currentPage === 'transactions') await loadTransactions();
+}
+
+// -----------------------------------------------------------------------
+// GESTURE: SWIPE LEFT/RIGHT BETWEEN TABS
+// -----------------------------------------------------------------------
+
+function attachSwipeNavigation() {
+  let startX = 0;
+  let startY = 0;
+  let tracking = false;
+
+  function reset() { tracking = false; }
+
+  document.addEventListener('touchstart', function (e) {
+    if (txModal.classList.contains('visible') || confirmDialog.classList.contains('visible')) {
+      tracking = false;
+      return;
+    }
+    tracking = true;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  document.addEventListener('touchcancel', reset, { passive: true });
+
+  document.addEventListener('touchend', function (e) {
+    if (!tracking) return;
+    tracking = false;
+
+    const deltaX = e.changedTouches[0].clientX - startX;
+    const deltaY = e.changedTouches[0].clientY - startY;
+
+    const isHorizontal = Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+    if (!isHorizontal) return;
+
+    const currentIndex = PAGE_ORDER.indexOf(state.currentPage);
+    if (deltaX < 0 && currentIndex < PAGE_ORDER.length - 1) {
+      navigateTo(PAGE_ORDER[currentIndex + 1]); // swipe left -> next tab
+    } else if (deltaX > 0 && currentIndex > 0) {
+      navigateTo(PAGE_ORDER[currentIndex - 1]); // swipe right -> previous tab
+    }
+  }, { passive: true });
+}
+
+// -----------------------------------------------------------------------
+// GESTURE: PULL TO REFRESH
+// -----------------------------------------------------------------------
+
+function attachPullToRefresh() {
+  const PULL_THRESHOLD = 60;
+  const MAX_PULL = 90;
+
+  let startY = 0;
+  let pulling = false;
+  let refreshing = false;
+
+  document.addEventListener('touchstart', function (e) {
+    if (refreshing) return;
+    if (txModal.classList.contains('visible') || confirmDialog.classList.contains('visible')) return;
+    if (window.scrollY > 5) return;
+
+    startY = e.touches[0].clientY;
+    pulling = true;
+    pullRefreshIndicator.classList.add('dragging');
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function (e) {
+    if (!pulling || refreshing) return;
+
+    const delta = e.touches[0].clientY - startY;
+    if (delta <= 0) return;
+
+    // Take over from the browser's native scroll/bounce so our custom
+    // indicator actually tracks the finger instead of fighting Safari's
+    // own rubber-band effect. Requires a non-passive listener.
+    e.preventDefault();
+
+    const capped = Math.min(delta, MAX_PULL);
+    pullRefreshIndicator.style.transform = `translateX(-50%) translateY(${capped - 30}px)`;
+    pullRefreshIndicator.classList.add('visible');
+  }, { passive: false });
+
+  document.addEventListener('touchcancel', function () {
+    pulling = false;
+    pullRefreshIndicator.classList.remove('dragging', 'visible');
+    pullRefreshIndicator.style.transform = '';
+  }, { passive: true });
+
+  document.addEventListener('touchend', async function (e) {
+    if (!pulling || refreshing) return;
+    pulling = false;
+    pullRefreshIndicator.classList.remove('dragging');
+
+    const delta = e.changedTouches[0].clientY - startY;
+
+    if (delta > PULL_THRESHOLD) {
+      refreshing = true;
+      pullRefreshIndicator.classList.add('spinning');
+      try {
+        await refreshCurrentPage();
+        showToast('Refreshed');
+      } catch (err) {
+        showToast('Could not refresh.');
+      }
+      refreshing = false;
+      pullRefreshIndicator.classList.remove('spinning', 'visible');
+      pullRefreshIndicator.style.transform = '';
+    } else {
+      pullRefreshIndicator.classList.remove('visible');
+      pullRefreshIndicator.style.transform = '';
+    }
+  }, { passive: true });
 }
 
 // -----------------------------------------------------------------------
@@ -178,6 +306,7 @@ function renderDashboard(data) {
 
   animateNumber(statOutstanding, summary.outstanding, true);
   animateNumber(statEmiDue, summary.emiDue, true);
+  animateNumber(statTotalCardDue, summary.totalCardDue, true);
   animateNumber(statCardsPaid, summary.cardsPaid, false);
   animateNumber(statUpcomingDue, summary.upcomingDue, false);
 
@@ -262,7 +391,6 @@ function buildEmiCardHtml(card) {
         </div>
       </div>
       ${buildDueLabelHtml(card.dueLabel)}
-      ${card.comment ? `<p class="card-comment">${escapeHtml(card.comment)}</p>` : ''}
       <div class="card-item-actions">
         <button
           class="btn-mark-paid ripple-container"
